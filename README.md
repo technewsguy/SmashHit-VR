@@ -27,6 +27,24 @@ then **Run anyway**.
 
 To always play in a window, run `ShatterVR.exe game.apk` from a terminal in that folder.
 
+### With UniGetUI or Scoop
+
+ShatterVR is also in the [technewsguy/scoop-vr-mods](https://github.com/technewsguy/scoop-vr-mods) bucket, so
+[UniGetUI](https://github.com/marticliment/UniGetUI) (formerly WingetUI) or [Scoop](https://scoop.sh) can install it and
+keep it up to date:
+
+- **UniGetUI:** Settings > Package managers > Scoop > Buckets, add `vrmods` with the URL
+  `https://github.com/technewsguy/scoop-vr-mods`, then search for `shattervr` and install it.
+- **Command line:**
+  ```powershell
+  scoop bucket add vrmods https://github.com/technewsguy/scoop-vr-mods
+  scoop install vrmods/shattervr
+  ```
+
+Then copy your APK into the install folder as `game.apk` (the install shows the exact path, normally
+`%USERPROFILE%\scoop\apps\shattervr\current`) and start ShatterVR from the Start menu. Your APK is kept when ShatterVR
+updates.
+
 ## Controls
 
 | Action | VR controller | Mouse and keyboard |
