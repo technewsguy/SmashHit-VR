@@ -11,3 +11,4 @@ CMakeUserPresets.json
 *.rep/
 *.so
 /cache/
+/dist/

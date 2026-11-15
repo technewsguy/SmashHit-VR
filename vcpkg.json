@@ -1,6 +1,6 @@
 {
-  "name": "shattervr",
-  "version-string": "0.1.0",
+  "name": "smashhit-vr",
+  "version-string": "0.3.0",
   "dependencies": [
     "miniz",
     "openxr-loader",

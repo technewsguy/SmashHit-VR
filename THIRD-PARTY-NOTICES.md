@@ -1,6 +1,6 @@
 # Third-party notices
 
-ShatterVR Runtime uses the libraries below. Each keeps its own licence, reproduced here.
+SmashHit-VR uses the libraries below. Each keeps its own licence, reproduced here.
 
 ## SDL3
 

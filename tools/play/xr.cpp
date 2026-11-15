@@ -77,9 +77,9 @@ struct XrRig::Impl {
     bool init(std::string& error) {
         // The instance with the OpenGL binding extension.
         XrInstanceCreateInfo ici{XR_TYPE_INSTANCE_CREATE_INFO};
-        std::strcpy(ici.applicationInfo.applicationName, "sh_play");
+        std::strcpy(ici.applicationInfo.applicationName, "Smash Hit VR");
         ici.applicationInfo.applicationVersion = 1;
-        std::strcpy(ici.applicationInfo.engineName, "shattervr");
+        std::strcpy(ici.applicationInfo.engineName, "smashhit-vr");
         ici.applicationInfo.apiVersion = XR_MAKE_VERSION(1, 0, 0);
         const char* exts[] = {XR_KHR_OPENGL_ENABLE_EXTENSION_NAME};
         ici.enabledExtensionCount = 1;

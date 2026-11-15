@@ -16,6 +16,11 @@
 //     --gaze             with --vr: start with head aiming, as the Gear VR original did (any trigger throws); A / X, grip or G switches
 //     --realtime         with --frames: step at 60 Hz of real time (unattended runs otherwise go as fast as they
 //                        can, and then the room time does not follow the music)
+//     --size WxH         window size in pixels (default 1280x720), e.g. for --screenshot
+//     --no-hud           do not draw the in-level HUD (ball counter), e.g. for --screenshot
+//   sh_play <game.apk> --export-art DIR
+//                        write the game's logo (logo.png) and app icon (icon.png) from the APK to DIR, then exit
+//                        (the Steam library artwork is made from these and --screenshot frames)
 //
 // Controls: left click throws a ball at the pointer (and clicks the menus), F fast forward, S pause, Esc the game's
 //           "back" (pause menu in a level, closing menus; at the top of the menu it quits). With --room: after a
@@ -26,6 +31,7 @@
 // with a plain lit shader of our own. Sound: the game's sound banks, loops and level music (src/audio). Particles
 // and the original's glass rendering are not there yet.
 
+#include "assets/apk_archive.hpp"
 #include "assets/asset_pack.hpp"
 #include "audio/audio_engine.hpp"
 #include "assets/segment_mesh.hpp"
@@ -104,6 +110,9 @@ struct Options {
     int room = 0, mode = 1, balls = 25, frames = 0, autofire = 0;
     bool mode_given = false;
     bool room_given = false, mute = false, realtime = false, vr = false, gaze = false;
+    int width = 1280, height = 720;  // --size
+    bool no_hud = false;             // --no-hud
+    fs::path export_art;             // --export-art DIR
     fs::path screenshot;
     struct Click {
         int frame;
@@ -168,6 +177,12 @@ bool parse_args(int argc, char** argv, Options& o) {
             (a == "--hold" ? o.holds : o.powerups).push_back(c);
         } else if (a == "--screenshot" && i + 1 < argc) {
             o.screenshot = argv[++i];
+        } else if (a == "--size" && i + 1 < argc) {
+            if (std::sscanf(argv[++i], "%dx%d", &o.width, &o.height) != 2 || o.width < 64 || o.height < 64) return false;
+        } else if (a == "--no-hud") {
+            o.no_hud = true;
+        } else if (a == "--export-art" && i + 1 < argc) {
+            o.export_art = argv[++i];
         } else {
             return false;
         }
@@ -346,13 +361,51 @@ private:
     float music_gain_ = 0.7f, flat_gain_ = 1.0f;
 };
 
-// Where the player records live: the per-user preferences folder SDL picks (outside the source tree).
+// Where the player records live: the per-user preferences folder SDL picks (outside the source tree),
+// %APPDATA%\SmashHit-VR\SmashHit-VR. Records from before the rename (%APPDATA%\ShatterVR\ShatterVR) are copied once.
 fs::path records_file() {
-    char* dir = SDL_GetPrefPath("ShatterVR", "ShatterVR");
+    char* dir = SDL_GetPrefPath("SmashHit-VR", "SmashHit-VR");
     if (!dir) return {};
     fs::path p = fs::path(dir) / "records.txt";
     SDL_free(dir);
+    std::error_code ec;
+    if (!fs::exists(p, ec)) {
+        const fs::path old = p.parent_path().parent_path().parent_path() / "ShatterVR" / "ShatterVR" / "records.txt";
+        if (fs::exists(old, ec)) fs::copy_file(old, p, ec);
+    }
     return p;
+}
+
+// --export-art: the game's own logo and app icon from the user's APK, for the Steam library artwork.
+int export_art(const fs::path& apk, const fs::path& out) {
+    const ApkArchive archive(apk);
+    const AssetPack pack(apk);
+    fs::create_directories(out);
+    auto write = [&](const fs::path& f, std::span<const std::uint8_t> bytes) {
+        std::ofstream o(f, std::ios::binary);
+        o.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+        if (!o) throw std::runtime_error("could not write " + f.string());
+        std::printf("wrote %s\n", f.string().c_str());
+    };
+    // The menu's logo without the "remastered" line, else the one with it.
+    for (const char* name : {"menu/logo_clean.png", "menu/logo.png"}) {
+        if (!pack.contains(std::string(name) + ".mtx")) continue;
+        write(out / "logo.png", encode_png(pack.read_texture(name)));
+        break;
+    }
+    // The launcher icon: the largest density the APK has.
+    for (const char* name : {"res/drawable-xxxhdpi/icon.png", "res/drawable-xxhdpi/icon.png", "res/drawable-xhdpi/icon.png",
+                             "res/drawable-hdpi/icon.png", "res/drawable/icon.png"}) {
+        if (const auto* e = archive.find(name)) {
+            write(out / "icon.png", archive.read(*e));
+            break;
+        }
+    }
+    if (!fs::exists(out / "logo.png") || !fs::exists(out / "icon.png")) {
+        std::fprintf(stderr, "the APK has no logo or icon\n");
+        return 1;
+    }
+    return 0;
 }
 
 struct GpuMesh {
@@ -757,6 +810,7 @@ public:
     // The vibration asked for since the last call (0 none).
     // Ours: aim and pick with the head (the Gear VR original) or with the hand; kept with the records.
     bool head_aim() const { return records_.head_aim; }
+    void set_no_hud(bool on) { no_hud_ = on; }
     void set_head_aim(bool on) {
         records_.head_aim = on;
         save_records();
@@ -987,8 +1041,8 @@ public:
 
     std::string status() const {
         char buf[200];
-        if (!level_loaded_) return "ShatterVR - menu";
-        std::snprintf(buf, sizeof buf, "ShatterVR - balls %d  streak %d  distance %.0f  room %d %s%s", scoring_.balls,
+        if (!level_loaded_) return "Smash Hit VR - menu";
+        std::snprintf(buf, sizeof buf, "Smash Hit VR - balls %d  streak %d  distance %.0f  room %d %s%s", scoring_.balls,
                       scoring_.streak, level_->distance, level_->room_index, level_->current->type.c_str(),
                       level_->game_over ? "  GAME OVER" : "");
         return buf;
@@ -1272,7 +1326,7 @@ public:
         }
         draw_ui_batches(ui_world_);
         draw_ui_batches(ui_menu_);
-        draw_ui_batches(ui_hud_);
+        if (!no_hud_) draw_ui_batches(ui_hud_);
         if (vr_ && pointer_.x > -1e5f) {  // ours: where the hand's ray meets the GUI plane (the original had gaze)
             ui::UiBatch dot;
             const float r = pointer_.down ? 10.0f : 14.0f, x = pointer_.x, y = pointer_.y;
@@ -1716,6 +1770,7 @@ private:
     bool music_sync_allowed_ = false;  // real-time play with sound
     bool campaign_bosses_ = false;  // the room list includes boss rooms (expert mode)
     std::vector<ui::UiBatch> ui_world_, ui_menu_, ui_hud_;  // this frame's UI batches
+    bool no_hud_ = false;        // --no-hud
     bool vr_ = false;            // --vr: the headset gives the head, the aim and the GUI pointer
     phys::Quat vr_aim_{0, 0, 0, 1};  // the aiming hand's orientation (LOCAL space)
 
@@ -1776,7 +1831,7 @@ int run(const Options& opt) {
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);  // the floor reflections' stencil mask
-    SDL_Window* window = SDL_CreateWindow("ShatterVR", 1280, 720, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
+    SDL_Window* window = SDL_CreateWindow("Smash Hit VR", opt.width, opt.height, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
     if (!window) {
         std::fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
         return 1;
@@ -1811,6 +1866,7 @@ int run(const Options& opt) {
         }
         int vr_frames = 0;  // frames handed to the headset
         if (opt.gaze) game.set_head_aim(true);
+        game.set_no_hud(opt.no_hud);
         int hand = 1;  // the hand that aims: the one that last pulled its trigger (right to start)
         // A press waits for the next game step: the headset's frames come faster than the 60 Hz steps.
         bool running = true, clicked = false, pause = false, xr_throw = false;
@@ -1972,8 +2028,9 @@ int main(int argc, char** argv) {
     Options opt;
     if (!parse_args(argc, argv, opt)) {
         std::fprintf(stderr,
-                     "usage: %s <game.apk> [--room N] [--mode M] [--balls B] [--frames N] [--screenshot OUT.png] [--autofire K] [--mute] [--realtime]\n",
-                     argv[0]);
+                     "usage: %s <game.apk> [--room N] [--mode M] [--balls B] [--frames N] [--screenshot OUT.png] [--autofire K] [--mute] [--realtime] [--size WxH] [--no-hud]\n"
+                     "       %s <game.apk> --export-art DIR\n",
+                     argv[0], argv[0]);
         return 2;
     }
     if (!opt.screenshot.empty() && tools::refuse_source_tree(opt.screenshot)) {
@@ -1983,8 +2040,20 @@ int main(int argc, char** argv) {
     // Double-clicked there is no console, so problems go to a message box.
     auto report = [&](const std::string& text) {
         std::fprintf(stderr, "%s\n", text.c_str());
-        if (opt.launched_bare) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "ShatterVR", text.c_str(), nullptr);
+        if (opt.launched_bare) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Smash Hit VR", text.c_str(), nullptr);
     };
+    if (!opt.export_art.empty()) {
+        if (tools::refuse_source_tree(opt.export_art)) {
+            std::fprintf(stderr, "refusing to write game-derived images inside the source tree\n");
+            return 2;
+        }
+        try {
+            return export_art(opt.apk, opt.export_art);
+        } catch (const std::exception& ex) {
+            std::fprintf(stderr, "error: %s\n", ex.what());
+            return 1;
+        }
+    }
     if (opt.launched_bare && !std::filesystem::exists(opt.apk)) {
         report("Put your own Smash Hit Gear VR APK in this folder and name it game.apk:\n\n" + opt.apk.parent_path().string());
         return 1;

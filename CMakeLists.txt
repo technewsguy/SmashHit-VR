@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.25)
-project(shattervr LANGUAGES CXX)
+project(smashhit_vr LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-# One self-contained ShatterVR.exe: the static C++ runtime and static libraries (the x64-windows-static triplet).
+# One self-contained SmashHit-VR.exe: the static C++ runtime and static libraries (the x64-windows-static triplet).
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 if(MSVC)
@@ -129,9 +129,9 @@ endif()
 add_executable(sh_play tools/play/main.cpp tools/play/xr.cpp)
 target_include_directories(sh_play PRIVATE tools)
 target_link_libraries(sh_play PRIVATE sh_assets sh_render sh_game sh_audio sh_ui SDL3::SDL3 OpenXR::openxr_loader opengl32)
-# A windowed program (no console) named ShatterVR.exe, with its icon and version details.
-target_sources(sh_play PRIVATE packaging/shattervr.rc)
-set_target_properties(sh_play PROPERTIES OUTPUT_NAME ShatterVR WIN32_EXECUTABLE ON)
+# A windowed program (no console) named SmashHit-VR.exe, with its icon and version details.
+target_sources(sh_play PRIVATE packaging/smashhit-vr.rc)
+set_target_properties(sh_play PROPERTIES OUTPUT_NAME SmashHit-VR WIN32_EXECUTABLE ON)
 
 
 enable_testing()
