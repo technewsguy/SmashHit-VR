@@ -13,7 +13,8 @@
 //     --back F           the game's back key (Esc) on frame F (for unattended runs; repeatable)
 //     --vr               play in an OpenXR headset (the window mirrors the left eye); the trigger throws along the
 //                        controller and picks on the menus, the menu / B button is "back"
-//     --gaze             with --vr: start with head aiming, as the Gear VR original did (any trigger throws); A / X, grip or G switches
+//     --gaze             with --vr: start with head aiming and no reticle, as the Gear VR original (any trigger throws);
+//                        A / X, grip or G cycles hand -> head -> head without the reticle
 //     --realtime         with --frames: step at 60 Hz of real time (unattended runs otherwise go as fast as they
 //                        can, and then the room time does not follow the music)
 //     --size WxH         window size in pixels (default 1280x720), e.g. for --screenshot
@@ -43,6 +44,7 @@
 #include "game/level_def.hpp"
 #include "game/player_records.hpp"
 #include "game/render_level.hpp"
+#include "play/reticle.hpp"
 #include "play/xr.hpp"
 #include "ui/ui_script.hpp"
 #include "physics/qi_rotate.hpp"
@@ -808,13 +810,20 @@ public:
     }
     bool quit_requested() const { return quit_; }
     // The vibration asked for since the last call (0 none).
-    // Ours: aim and pick with the head (the Gear VR original) or with the hand; kept with the records.
-    bool head_aim() const { return records_.head_aim; }
+    // Ours: aim and pick with the hand or the head, with the reticle, or with the head and no reticle (the Gear VR
+    // original); kept with the records.
+    using Aim = game::PlayerRecords::Aim;
+    Aim aim() const { return records_.aim; }
+    bool head_aim() const { return records_.aim != Aim::kHand; }
     void set_no_hud(bool on) { no_hud_ = on; }
-    void set_head_aim(bool on) {
-        records_.head_aim = on;
+    void set_aim(Aim a) {
+        records_.aim = a;
         save_records();
         rumble_ = std::max(rumble_, 0.6f);  // a buzz to confirm the switch
+    }
+    // The A / X button (or G): hand -> head -> head without the reticle -> hand.
+    void next_aim() {
+        set_aim(records_.aim == Aim::kHand ? Aim::kHead : records_.aim == Aim::kHead ? Aim::kGearVr : Aim::kHand);
     }
     float take_rumble() {
         const float r = rumble_;
@@ -1012,7 +1021,6 @@ public:
         const ui::UiPointer p = gui_pointer();
         if (menu_ && menu_trans_ > 0.05f) menu_->tick(io_.dt, touches, p);
         if (hud_ && menu_trans_ < 0.95f) hud_->tick(io_.dt, touches, p);
-        pointer_.pressed = false;  // a press counts in the first step after it
         effects_.end_frame();
         // RenderLevel::fillBuffers2 draws three random alphas per laser every frame: once per game frame here too.
         laser_verts_.clear();
@@ -1327,17 +1335,30 @@ public:
         draw_ui_batches(ui_world_);
         draw_ui_batches(ui_menu_);
         if (!no_hud_) draw_ui_batches(ui_hud_);
-        if (vr_ && pointer_.x > -1e5f) {  // ours: where the hand's ray meets the GUI plane (the original had gaze)
-            ui::UiBatch dot;
-            const float r = pointer_.down ? 10.0f : 14.0f, x = pointer_.x, y = pointer_.y;
-            for (const auto& c : {std::array<float, 2>{x - r, y - r}, {x + r, y - r}, {x + r, y + r}, {x - r, y - r},
-                                  {x + r, y + r}, {x - r, y + r}})
-                dot.vertices.push_back({c[0], c[1], 0, 0, {1, 1, 1, 0.85f}});
-            draw_ui_batches({dot});
+        // (With head aiming and no reticle, as the Gear VR played, it is hidden only while a level runs unpaused: the
+        // menus and the pause menu keep it.)
+        const bool playing = state_ == 3 && requested_ == 3 && level_loaded_ && pause_blend_ == 0.0f;
+        if (vr_ && pointer_.x > -1e5f && !(records_.aim == Aim::kGearVr && playing)) {  // ours: where the pointer meets the GUI plane
+            // The red scope reticle (reticle.hpp), made once and kept with the UI textures under a name the game's
+            // assets can't have. About 1.5 degrees across; a little smaller while the trigger is held.
+            static const std::string kReticle = "#reticle";
+            if (!ui_textures_.count(kReticle)) {
+                const Image img = play::make_reticle(512);
+                ui_textures_[kReticle] = UiTexture{upload_texture(img), img.width, img.height};
+            }
+            ui::UiBatch reticle;
+            reticle.texture = kReticle;
+            const float r = pointer_.down ? 56.0f : 64.0f, x = pointer_.x, y = pointer_.y;
+            for (const auto& c : {std::array<float, 4>{x - r, y - r, 0, 0}, {x + r, y - r, 1, 0}, {x + r, y + r, 1, 1},
+                                  {x - r, y - r, 0, 0}, {x + r, y + r, 1, 1}, {x - r, y + r, 0, 1}})
+                reticle.vertices.push_back({c[0], c[1], c[2], c[3], {1, 1, 1, 1}});
+            draw_ui_batches({reticle});
         }
         if (fresh) {
             gui_.end_frame(pointer_.released);
-            pointer_.released = false;
+            // A press and a release last until the UI has been drawn: the boxes pick in their draw, and in VR two
+            // game steps can run between drawn frames (the headset paces them), which used to lose the press.
+            pointer_.pressed = pointer_.released = false;
         }
         if (state_fade_ > 0.0f) {
             const float s = gui_scale(), off = gui_offset(), ox = gui_offset_x();
@@ -1865,7 +1886,7 @@ int run(const Options& opt) {
             SDL_GL_SetSwapInterval(0);  // the runtime paces the frames (xrWaitFrame)
         }
         int vr_frames = 0;  // frames handed to the headset
-        if (opt.gaze) game.set_head_aim(true);
+        if (opt.gaze) game.set_aim(Game::Aim::kGearVr);
         game.set_no_hud(opt.no_hud);
         int hand = 1;  // the hand that aims: the one that last pulled its trigger (right to start)
         // A press waits for the next game step: the headset's frames come faster than the 60 Hz steps.
@@ -1880,7 +1901,7 @@ int run(const Options& opt) {
                 if (e.type == SDL_EVENT_QUIT) running = false;
                 if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) {
                     if (e.key.key == SDLK_ESCAPE) game.back();
-                    if (e.key.key == SDLK_G && xr) game.set_head_aim(!game.head_aim());
+                    if (e.key.key == SDLK_G && xr) game.next_aim();
                     if (e.key.key == SDLK_S) pause = true;
                     if (e.key.key == SDLK_R && game.direct()) game.restart(opt.balls);
                     if (e.key.key == SDLK_C && xr) xr->recenter();
@@ -1915,9 +1936,9 @@ int run(const Options& opt) {
                     if (xs.throw_pressed[hand]) xr_throw = true;
                     held = xs.throw_down[hand];
                     const play::VrPose& aim = xs.aim[hand];
-                    // Head aiming, as on the Gear VR (the trigger stands in for its touchpad tap), or hand aiming; the
-                    // A / X button (grip on Vive and Windows MR) or G switches.
-                    if (xs.aim_toggle_pressed) game.set_head_aim(!game.head_aim());
+                    // Hand aiming, or head aiming as on the Gear VR (the trigger stands in for its touchpad tap), with
+                    // or without the reticle; the A / X button (grip on Vive and Windows MR) or G cycles the three.
+                    if (xs.aim_toggle_pressed) game.next_aim();
                     const play::VrPose& pointer = game.head_aim() ? xs.head : aim;
                     game.vr_input(xs.head.valid ? xs.head.orientation : phys::Quat{}, pointer.valid ? &pointer : nullptr,
                                   xs.throw_down[hand]);

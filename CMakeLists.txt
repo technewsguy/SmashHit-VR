@@ -137,10 +137,11 @@ set_target_properties(sh_play PROPERTIES OUTPUT_NAME SmashHit-VR WIN32_EXECUTABL
 enable_testing()
 target_include_directories(sh_assets PUBLIC ${STB_INCLUDE_DIR})
 foreach(pair "asset_decode;sh_assets" "segment_mesh;sh_assets" "physics_solver;sh_physics" "audio;sh_audio"
-             "ui_script;sh_ui" "menu_backdrop;sh_game" "player_records;sh_game")
+             "ui_script;sh_ui" "menu_backdrop;sh_game" "player_records;sh_game" "reticle;sh_assets")
   list(GET pair 0 name)
   list(GET pair 1 lib)
   add_executable(test_${name} tests/test_${name}.cpp)
   target_link_libraries(test_${name} PRIVATE ${lib})
   add_test(NAME ${name} COMMAND test_${name})
 endforeach()
+target_include_directories(test_reticle PRIVATE tools)

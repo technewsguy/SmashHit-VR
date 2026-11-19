@@ -36,7 +36,10 @@ struct PlayerRecords {
     int balls[kModes][kCheckpoints] = {};
     int streak[kModes][kCheckpoints] = {};
     int best_score[kModes] = {};  // the menu's overall high score (unverified: what mgGetHighScore() returns)
-    bool head_aim = false;  // ours: VR aiming with the head instead of the hand
+    // Ours: how VR aims. kHand: the hand, with a reticle; kHead: the head, with a reticle; kGearVr: the head with no
+    // reticle, as the Gear VR original played.
+    enum class Aim { kHand, kHead, kGearVr };
+    Aim aim = Aim::kHand;
     std::string music = "1", sound = "1";  // the audio bag's settings (0, 0.3, 0.7, 1), kept by game.saveConfig
     PlayerStats stats[kModes];
     int current_mode = 1;  // Player +0x63c, kept by Player::save (unverified); "game.mode" changes it

@@ -68,10 +68,16 @@ your progress carry over.
 | Rapid fire, during the green power-up | Hold the trigger | Hold left click |
 | Back, pause | B or menu button | Esc |
 | Recentre the view | Thumbstick or trackpad click, or C on the keyboard | Not needed |
-| Switch between hand and head aiming | A or X (grip on Vive and Windows MR), or G on the keyboard | Not needed |
+| Switch the aiming mode | A or X (grip on Vive and Windows MR), or G on the keyboard | Not needed |
 
-Hand aiming is the default. Head aiming works as the original did: you aim and pick menu items by looking, and either
-trigger throws. Your choice is remembered.
+The button cycles through three aiming modes, with a short buzz each time:
+
+1. **Hand** (the default): aim and pick menu items with the controller, shown by a red reticle.
+2. **Head**: aim and pick by looking, with the red reticle where you look. Either trigger throws.
+3. **Head, no reticle**: as the Gear VR original played: aim by looking, with no marker while you play. The reticle
+   still shows in the menus and the pause menu.
+
+Your choice is remembered.
 
 ## Game modes
 
